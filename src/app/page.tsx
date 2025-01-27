@@ -48,8 +48,8 @@ const ChatPage: React.FC = () => {
       setTranscription(transcriptionText);
 
       // Step 2: Establish WebSocket connection and send text
-      const chatResponse = "I love you."; //
-      // await interactWithChatGPT(transcriptionText);
+      const chatResponse = await interactWithChatGPT(transcriptionText); //
+
       // Step 3: Convert ChatGPT's response to voice
       const audioResponseUrl = await convertTextToVoice(chatResponse);
       setResponseAudioUrl(audioResponseUrl);
@@ -82,42 +82,40 @@ const ChatPage: React.FC = () => {
       "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
       [
         "realtime",
-        // Auth
         "openai-insecure-api-key." + process.env.openaiApiKey,
-        // Optional
         "openai-organization." + process.env.openaiOrgId,
         "openai-project." + process.env.openaiProjectKey,
-        // Beta protocol, required
         "openai-beta.realtime-v1"
       ]
     );
 
-    // const ws = new WebSocket("wss://api.openai.com/v1/chat");
-    // return new Promise((resolve, reject) => {
-    ws.onopen = () => {
-      console.log(text);
-      const event = {
-        type: "response.create",
-        response: {
-          modalities: ["text"],
-          instructions: text,
-        }
+    return new Promise((resolve, reject) => {
+      ws.onopen = () => {
+        console.log(text);
+        const event = {
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: text,
+          }
+        };
+        ws.send(JSON.stringify(event));
       };
-      ws.send(JSON.stringify(event));
-      // ws.send(JSON.stringify({ role: "user", content: text }));
-    };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log(data)
-      // resolve(data.content);
-      // ws.close();
-    };
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log(data)
+        if (data.type === 'response.text.done') {
+          resolve(data.text);
+          ws.close();
+        }
 
-    ws.onerror = (error) => {
-      // reject(error);
-    };
-    // });
+      };
+
+      ws.onerror = (error) => {
+        reject(error);
+      };
+    });
   };
 
   const convertTextToVoice = async (text: string): Promise<string> => {
