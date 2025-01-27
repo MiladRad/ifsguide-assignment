@@ -7,6 +7,7 @@ const ChatPage: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
+  const [responseAudioUrl, setResponseAudioUrl] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
 
@@ -42,8 +43,12 @@ const ChatPage: React.FC = () => {
     if (!audioUrl) return;
 
     try {
+      // Step 1: Convert voice to text
       const transcriptionText = await convertVoiceToText(audioUrl);
       setTranscription(transcriptionText);
+
+      // Step 2: Establish WebSocket connection and send text
+      const chatResponse = await interactWithChatGPT(transcriptionText);
 
     } catch (error) {
       console.error("Error handling response:", error);
@@ -51,7 +56,7 @@ const ChatPage: React.FC = () => {
   };
 
   const convertVoiceToText = async (audioUrl: string): Promise<string> => {
-
+    // Upload audio to OpenAI's API and get transcription
     const audioBlob = await fetch(audioUrl).then((res) => res.blob());
     const formData = new FormData();
     formData.append("file", audioBlob, "audio.webm");
@@ -65,6 +70,47 @@ const ChatPage: React.FC = () => {
 
     const data = await response.json();
     return data.text;
+  };
+
+  const interactWithChatGPT = async (text: string): Promise<string> => {
+
+    const ws = new WebSocket(
+      "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+      [
+        "realtime",
+        // Auth
+        "openai-insecure-api-key." + process.env.openaiApiKey,
+        // Optional
+        "openai-organization." + process.env.openaiOrgId,
+        "openai-project." + process.env.openaiProjectKey,
+        // Beta protocol, required
+        "openai-beta.realtime-v1"
+      ]
+    );
+
+    return new Promise((resolve, reject) => {
+      ws.onopen = () => {
+        console.log(text);
+        const event = {
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: text,
+          }
+        };
+        ws.send(JSON.stringify(event));
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        resolve(data.content);
+        ws.close();
+      };
+
+      ws.onerror = (error) => {
+        reject(error);
+      };
+    });
   };
 
   return (
